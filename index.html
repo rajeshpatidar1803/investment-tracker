@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Investment Tracker</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Investment Tracker</h1>
+  <button id="logoutBtn" class="btn-ghost" hidden>Log out</button>
+</header>
+
+<main id="app">
+
+  <!-- LOGIN VIEW -->
+  <section id="loginView" class="card">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="clientLogin">Client Login</button>
+      <button class="tab-btn" data-tab="adminLogin">Advisor Login</button>
+    </div>
+
+    <form id="clientLoginForm" class="tab-panel active">
+      <label>Client ID
+        <input type="text" id="clientId" required>
+      </label>
+      <label>Access Code
+        <input type="password" id="accessCode" required>
+      </label>
+      <button type="submit" class="btn-primary">View My Portfolio</button>
+    </form>
+
+    <form id="adminLoginForm" class="tab-panel">
+      <label>Admin Key
+        <input type="password" id="adminKey" required>
+      </label>
+      <button type="submit" class="btn-primary">Log in as Advisor</button>
+    </form>
+
+    <p id="loginError" class="error" hidden></p>
+  </section>
+
+  <!-- DASHBOARD VIEW -->
+  <section id="dashboardView" class="card" hidden>
+
+    <div id="adminControls" hidden>
+      <label>Viewing client
+        <select id="clientSelect"></select>
+      </label>
+
+      <form id="addEntryForm" class="entry-form">
+        <h3>Add Entry</h3>
+        <div class="entry-form-grid">
+          <label>Date
+            <input type="date" id="entryDate" required>
+          </label>
+          <label>Type
+            <select id="entryType">
+              <option>Investment</option>
+              <option>Withdrawal</option>
+              <option>Current Value</option>
+            </select>
+          </label>
+          <label>Amount
+            <input type="number" id="entryAmount" step="0.01" min="0" required>
+          </label>
+          <label class="notes-field">Notes
+            <input type="text" id="entryNotes" placeholder="optional">
+          </label>
+        </div>
+        <button type="submit" class="btn-primary">Add Entry</button>
+        <p id="addEntryMsg" class="hint" hidden></p>
+      </form>
+    </div>
+
+    <h2 id="clientNameHeading"></h2>
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <span class="summary-label">Total Invested</span>
+        <span class="summary-value" id="sumInvested">-</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Total Withdrawn</span>
+        <span class="summary-value" id="sumWithdrawn">-</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Net Invested</span>
+        <span class="summary-value" id="sumNet">-</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Current Value</span>
+        <span class="summary-value" id="sumCurrentValue">-</span>
+      </div>
+      <div class="summary-card highlight">
+        <span class="summary-label">Gain / Loss</span>
+        <span class="summary-value" id="sumGain">-</span>
+      </div>
+    </div>
+
+    <table id="entriesTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Amount</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="entriesBody"></tbody>
+    </table>
+    <p id="noEntries" class="hint" hidden>No entries yet.</p>
+
+  </section>
+
+  <p id="loading" class="hint" hidden>Loading...</p>
+
+</main>
+
+<script src="js/app.js"></script>
+</body>
+</html>
