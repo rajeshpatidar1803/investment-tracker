@@ -10,43 +10,39 @@ GitHub Pages) is the frontend.
   sees only their own entries and totals (Total Invested, Withdrawn, Net,
   Current Value, Gain/Loss).
 
-## 1. Create the Google Sheet
+## 1. Open the Google Sheet
 
-Create a new Google Sheet with two tabs, headers exactly as below (row 1):
-
-**Clients**
-| ClientID | ClientName | AccessCode |
-|---|---|---|
-| C001 | Jane Doe | jane-secret-1 |
-
-**Entries**
-| ClientID | Date | Type | Amount | Notes | Timestamp |
-|---|---|---|---|---|---|
-
-Leave `Entries` empty besides the header row — entries are added from the
-app. `Type` should be one of: `Investment`, `Withdrawal`, `Current Value`.
-
-- `Investment` / `Withdrawal`: money in/out of the portfolio.
-- `Current Value`: a snapshot of what the portfolio is worth today (used
-  to calculate gain/loss vs. net invested). Add one whenever you want to
-  update a client's current value.
-
-Give each client their own `ClientID` and a private `AccessCode` — share
-those with the client instead of the sheet itself.
+A blank sheet named **Investment Tracker** has already been created for
+you in Drive. Open it, then follow step 2 — the tabs and headers get
+created automatically, you don't need to type them by hand.
 
 ## 2. Deploy the Apps Script Web App
 
 1. In the Sheet: **Extensions > Apps Script**.
 2. Delete the default code, paste in [`apps-script/Code.gs`](apps-script/Code.gs).
-3. Change `ADMIN_KEY` at the top to a long random string only you know.
-4. **Deploy > New deployment**, type **Web app**.
+3. Change `ADMIN_KEY` at the top to a long random string only you know —
+   this is your advisor password, so keep it private.
+4. In the toolbar, use the function dropdown (next to the bug icon) to
+   select **setup**, then click **Run** (▶). The first time, Google will
+   ask you to authorize the script — click through **Advanced > Go to
+   (project name) > Allow**. This creates the `Clients` and `Entries`
+   tabs in your sheet with headers and one sample client row (`C001`).
+5. **Deploy > New deployment**, type **Web app**.
    - Execute as: **Me**
    - Who has access: **Anyone**
-5. Click Deploy, authorize the script, and copy the **Web app URL**
+6. Click Deploy, authorize again if asked, and copy the **Web app URL**
    (looks like `https://script.google.com/macros/s/XXXX/exec`).
 
 Redeploy (**Deploy > Manage deployments > Edit > New version**) any time
 you change the script.
+
+### Adding real clients
+
+In the `Clients` tab, add one row per client: a `ClientID` you make up
+(e.g. `C002`), their name, and an `AccessCode` (a password you choose for
+them). Share the `ClientID` + `AccessCode` with that client directly —
+never share the sheet itself. Delete or edit the sample `C001` row once
+you have real clients.
 
 ## 3. Point the site at your Web App
 
@@ -56,20 +52,17 @@ Open [`js/app.js`](js/app.js) and set:
 const WEB_APP_URL = 'https://script.google.com/macros/s/XXXX/exec';
 ```
 
-## 4. Host on GitHub Pages
+## 4. GitHub Pages
+
+Already live at **https://rajeshpatidar1803.github.io/investment-tracker/**.
+Any time you change a file, commit and push and the live site updates
+within a minute or two:
 
 ```bash
-git init
 git add .
-git commit -m "Investment tracker"
-git branch -M main
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main
+git commit -m "your message"
+git push
 ```
-
-Then in the GitHub repo: **Settings > Pages > Source: Deploy from branch >
-main / (root)**. Your site will be live at
-`https://<you>.github.io/<repo>/` within a minute or two.
 
 ## Security notes
 

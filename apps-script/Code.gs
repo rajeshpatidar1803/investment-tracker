@@ -2,21 +2,16 @@
  * Investment Tracker backend — Google Apps Script Web App.
  *
  * Setup:
- * 1. Create a Google Sheet with two tabs:
- *
- *    "Clients" tab, headers in row 1:
- *      ClientID | ClientName | AccessCode
- *
- *    "Entries" tab, headers in row 1:
- *      ClientID | Date | Type | Amount | Notes | Timestamp
- *      (Type is one of: Investment, Withdrawal, Current Value)
- *
- * 2. Extensions > Apps Script, paste this file in as Code.gs.
+ * 1. Open your Google Sheet, then Extensions > Apps Script.
+ * 2. Delete the default code, paste this whole file in as Code.gs.
  * 3. Set ADMIN_KEY below to a long random string you choose.
- * 4. Deploy > New deployment > type "Web app".
+ * 4. In the toolbar, pick "setup" from the function dropdown and click Run.
+ *    Authorize when prompted — this creates the "Clients" and "Entries"
+ *    tabs with headers and a sample client row.
+ * 5. Deploy > New deployment > type "Web app".
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 5. Copy the deployment URL into js/app.js as WEB_APP_URL.
+ * 6. Copy the deployment URL into js/app.js as WEB_APP_URL.
  */
 
 const CLIENTS_SHEET = 'Clients';
@@ -46,6 +41,32 @@ function handle(p) {
 
 function ss() {
   return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/**
+ * Run this once from the Apps Script editor (function dropdown > setup > Run)
+ * to create the Clients and Entries tabs with headers and a sample client.
+ */
+function setup() {
+  const spreadsheet = ss();
+
+  let clients = spreadsheet.getSheetByName(CLIENTS_SHEET);
+  if (!clients) clients = spreadsheet.insertSheet(CLIENTS_SHEET);
+  clients.clear();
+  clients.getRange(1, 1, 1, 3).setValues([['ClientID', 'ClientName', 'AccessCode']]);
+  clients.getRange(2, 1, 1, 3).setValues([['C001', 'Sample Client', 'change-me-123']]);
+  clients.setFrozenRows(1);
+
+  let entries = spreadsheet.getSheetByName(ENTRIES_SHEET);
+  if (!entries) entries = spreadsheet.insertSheet(ENTRIES_SHEET);
+  entries.clear();
+  entries.getRange(1, 1, 1, 6).setValues([['ClientID', 'Date', 'Type', 'Amount', 'Notes', 'Timestamp']]);
+  entries.setFrozenRows(1);
+
+  const blank = spreadsheet.getSheetByName('Sheet1');
+  if (blank && spreadsheet.getSheets().length > 2) spreadsheet.deleteSheet(blank);
+
+  Logger.log('Setup complete: Clients and Entries tabs are ready.');
 }
 
 function sheetToObjects(sheetName) {
