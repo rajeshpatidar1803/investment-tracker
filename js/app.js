@@ -1,5 +1,5 @@
 // Paste your deployed Apps Script Web App URL here (see apps-script/Code.gs).
-const WEB_APP_URL = 'PASTE_YOUR_DEPLOYED_WEB_APP_URL_HERE';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZXEJsYmuM6DF5j0_4VDkZo5xqNRkm1YiQaxbI1CGt0DU5m2AmjsXpIEJcFZ5fpZoU/exec';
 
 const state = {
   role: null,       // 'admin' | 'client'
