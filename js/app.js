@@ -107,7 +107,7 @@ function renderForSelectedClient() {
   const clientId = $('clientSelect').value;
   const client = state.clients.find(c => String(c.ClientID) === String(clientId));
   const entries = state.entries.filter(en => String(en.ClientID) === String(clientId));
-  $('clientNameHeading').textContent = client ? client.ClientName : '';
+  $('clientNameHeading').textContent = client ? `${client.ClientName} (${client.ClientID})` : '';
   renderSummaryAndTable(entries);
 }
 
@@ -116,7 +116,7 @@ function enterClientDashboard() {
   $('dashboardView').hidden = false;
   $('adminControls').hidden = true;
   $('logoutBtn').hidden = false;
-  $('clientNameHeading').textContent = state.currentClientName;
+  $('clientNameHeading').textContent = `${state.currentClientName} (${state.currentClientId})`;
   renderSummaryAndTable(state.entries);
 }
 
@@ -180,10 +180,10 @@ function renderSummaryAndTable(entries) {
   const currentValue = latestValue !== null ? latestValue : net;
   const gain = currentValue - net;
 
+  $('heroValue').textContent = fmt(currentValue);
   $('sumInvested').textContent = fmt(invested);
   $('sumWithdrawn').textContent = fmt(withdrawn);
   $('sumNet').textContent = fmt(net);
-  $('sumCurrentValue').textContent = fmt(currentValue);
 
   const gainEl = $('sumGain');
   const gainPct = net !== 0 ? ` (${(gain / net * 100).toFixed(1)}%)` : '';

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Investment Tracker</title>
+<title>Vegacapital</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <header class="topbar">
-  <h1>Investment Tracker</h1>
+  <h1>Vegacapital</h1>
   <button id="logoutBtn" class="btn-ghost" hidden>Log out</button>
 </header>
 
@@ -77,6 +77,11 @@
 
     <h2 id="clientNameHeading"></h2>
 
+    <div class="hero-value">
+      <span class="hero-label">Total value as of today</span>
+      <span class="hero-amount" id="heroValue">-</span>
+    </div>
+
     <div class="summary-grid">
       <div class="summary-card">
         <span class="summary-label">Total Invested</span>
@@ -89,10 +94,6 @@
       <div class="summary-card">
         <span class="summary-label">Net Invested</span>
         <span class="summary-value" id="sumNet">-</span>
-      </div>
-      <div class="summary-card">
-        <span class="summary-label">Current Value</span>
-        <span class="summary-value" id="sumCurrentValue">-</span>
       </div>
       <div class="summary-card highlight">
         <span class="summary-label">Gain / Loss</span>

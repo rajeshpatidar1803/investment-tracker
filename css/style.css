@@ -139,6 +139,10 @@ input:focus, select:focus {
   gap: 16px;
 }
 
+#adminControls[hidden] {
+  display: none;
+}
+
 #clientSelect { max-width: 320px; }
 
 .entry-form-grid {
@@ -154,6 +158,30 @@ input:focus, select:focus {
 }
 
 .notes-field { grid-column: 1 / -1; }
+
+.hero-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 20px;
+  margin: 4px 0 4px;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+}
+
+.hero-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hero-amount {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 .summary-grid {
   display: grid;
