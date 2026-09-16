@@ -17,6 +17,7 @@
 const CLIENTS_SHEET = 'Clients';
 const ENTRIES_SHEET = 'Entries';
 const ADMIN_KEY = 'CHANGE_ME_ADMIN_KEY';
+const DEFAULT_RATE = 0.13; // 13% p.a., used when a client has no Rate column value
 
 function doGet(e) {
   return handle(e.parameter);
@@ -53,8 +54,8 @@ function setup() {
   let clients = spreadsheet.getSheetByName(CLIENTS_SHEET);
   if (!clients) clients = spreadsheet.insertSheet(CLIENTS_SHEET);
   clients.clear();
-  clients.getRange(1, 1, 1, 3).setValues([['ClientID', 'ClientName', 'AccessCode']]);
-  clients.getRange(2, 1, 1, 3).setValues([['C001', 'Sample Client', 'change-me-123']]);
+  clients.getRange(1, 1, 1, 4).setValues([['ClientID', 'ClientName', 'AccessCode', 'Rate']]);
+  clients.getRange(2, 1, 1, 4).setValues([['C001', 'Sample Client', 'change-me-123', DEFAULT_RATE]]);
   clients.setFrozenRows(1);
 
   let entries = spreadsheet.getSheetByName(ENTRIES_SHEET);
@@ -67,6 +68,85 @@ function setup() {
   if (blank && spreadsheet.getSheets().length > 2) spreadsheet.deleteSheet(blank);
 
   Logger.log('Setup complete: Clients and Entries tabs are ready.');
+}
+
+/**
+ * One-time migration: adds a "Rate" column to the Clients tab (default
+ * DEFAULT_RATE for existing rows) if it doesn't already exist. Run once
+ * from the function dropdown after pulling in this version of the script.
+ */
+function addRateColumn() {
+  const sheet = ss().getSheetByName(CLIENTS_SHEET);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('Rate') !== -1) {
+    Logger.log('Rate column already present.');
+    return;
+  }
+  const col = sheet.getLastColumn() + 1;
+  sheet.getRange(1, col).setValue('Rate');
+  const numRows = sheet.getLastRow() - 1;
+  if (numRows > 0) {
+    const defaults = Array.from({ length: numRows }, () => [DEFAULT_RATE]);
+    sheet.getRange(2, col, numRows, 1).setValues(defaults);
+  }
+  Logger.log('Rate column added with default ' + DEFAULT_RATE + ' for ' + numRows + ' clients.');
+}
+
+/**
+ * Compounds `principal` annually at `rate` from `startDate` up to `asOfDate`,
+ * then applies simple interest for the partial year since the last
+ * anniversary. Matches the original spreadsheet's interest calculation.
+ */
+function compoundedValue(principal, startDate, rate, asOfDate) {
+  let value = principal;
+  let cursor = new Date(startDate);
+  while (true) {
+    const nextAnniversary = new Date(cursor);
+    nextAnniversary.setFullYear(cursor.getFullYear() + 1);
+    if (nextAnniversary > asOfDate) break;
+    value *= (1 + rate);
+    cursor = nextAnniversary;
+  }
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysSince = Math.max(0, (asOfDate - cursor) / msPerDay);
+  return value * (1 + rate * daysSince / 365);
+}
+
+/** Sums compounded Investment entries minus face-value Withdrawals. */
+function tallyCurrentValue(clientEntries, rate) {
+  const today = new Date();
+  let total = 0;
+  clientEntries.forEach(en => {
+    if (en.Type === 'Investment') {
+      total += compoundedValue(Number(en.Amount), new Date(en.Date), rate, today);
+    } else if (en.Type === 'Withdrawal') {
+      total -= Number(en.Amount);
+    }
+  });
+  return total;
+}
+
+/**
+ * Strips any stored "Current Value" rows and replaces them with a freshly
+ * computed one per client, dated today, so the dashboard always shows an
+ * up-to-date value without needing manual entries.
+ */
+function withComputedValues(clients, allEntries) {
+  const realEntries = allEntries.filter(en => en.Type !== 'Current Value');
+  const todayStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const synthetic = clients.map(c => {
+    const clientEntries = realEntries.filter(en => String(en.ClientID) === String(c.ClientID));
+    const rate = Number(c.Rate) || DEFAULT_RATE;
+    const value = tallyCurrentValue(clientEntries, rate);
+    return {
+      ClientID: c.ClientID,
+      Date: todayStr,
+      Type: 'Current Value',
+      Amount: Math.round(value * 100) / 100,
+      Notes: 'Auto-calculated at ' + (rate * 100) + '% p.a.',
+    };
+  });
+  return realEntries.concat(synthetic);
 }
 
 function sheetToObjects(sheetName) {
@@ -89,9 +169,10 @@ function sheetToObjects(sheetName) {
 
 function login(p) {
   const clients = sheetToObjects(CLIENTS_SHEET);
+  const allEntries = sheetToObjects(ENTRIES_SHEET);
 
   if (p.adminKey === ADMIN_KEY) {
-    const entries = sheetToObjects(ENTRIES_SHEET);
+    const entries = withComputedValues(clients, allEntries);
     return { role: 'admin', clients, entries };
   }
 
@@ -101,7 +182,7 @@ function login(p) {
   );
   if (!client) return { error: 'Invalid Client ID or Access Code' };
 
-  const entries = sheetToObjects(ENTRIES_SHEET).filter(
+  const entries = withComputedValues([client], allEntries).filter(
     en => String(en.ClientID) === String(client.ClientID)
   );
   return { role: 'client', client, entries };
