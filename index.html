@@ -54,6 +54,11 @@
   <section id="dashboardView" class="card" hidden>
 
     <div id="adminControls" hidden>
+      <div id="dueCyclesSection" hidden>
+        <h3>Interest cycles due</h3>
+        <div id="dueCyclesList"></div>
+      </div>
+
       <label>Viewing client
         <select id="clientSelect"></select>
       </label>
@@ -114,6 +119,7 @@
           <th>Date</th>
           <th>Type</th>
           <th>Amount</th>
+          <th>Tranche</th>
           <th>Notes</th>
         </tr>
       </thead>

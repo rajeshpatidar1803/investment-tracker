@@ -6,6 +6,7 @@ const state = {
   adminKey: null,
   clients: [],
   entries: [],       // entries currently displayed
+  dueCycles: [],      // admin only: tranches with an interest cycle awaiting a decision
   currentClientId: null,
   currentClientName: '',
 };
@@ -68,6 +69,7 @@ async function doLogin(payload) {
       state.adminKey = payload.adminKey;
       state.clients = res.clients;
       state.entries = res.entries;
+      state.dueCycles = res.dueCycles || [];
       enterAdminDashboard();
     } else {
       state.currentClientId = res.client.ClientID;
@@ -84,7 +86,7 @@ async function doLogin(payload) {
 
 // ---------- Dashboard entry points ----------
 
-function enterAdminDashboard() {
+function enterAdminDashboard(preserveClientId) {
   $('loginView').hidden = true;
   $('dashboardView').hidden = false;
   $('adminControls').hidden = false;
@@ -94,14 +96,77 @@ function enterAdminDashboard() {
   select.innerHTML = state.clients
     .map(c => `<option value="${c.ClientID}">${c.ClientName} (${c.ClientID})</option>`)
     .join('');
-  select.addEventListener('change', renderForSelectedClient);
+  select.onchange = renderForSelectedClient;
+  if (preserveClientId && state.clients.some(c => String(c.ClientID) === String(preserveClientId))) {
+    select.value = preserveClientId;
+  }
 
   $('entryDate').valueAsDate = new Date();
+
+  renderDueCycles();
 
   if (state.clients.length) {
     renderForSelectedClient();
   }
 }
+
+function renderDueCycles() {
+  const section = $('dueCyclesSection');
+  const list = $('dueCyclesList');
+  if (!state.dueCycles.length) {
+    section.hidden = true;
+    list.innerHTML = '';
+    return;
+  }
+  section.hidden = false;
+  list.innerHTML = state.dueCycles.map(d => `
+    <div class="due-cycle-row">
+      <div>
+        <strong>${d.ClientName} (${d.ClientID})</strong> &middot; tranche ${d.TrancheID}
+        <div class="hint">Invested ${fmt(d.InitialInvestment)} on ${d.InitialDate}
+          &middot; ${d.PendingCycles} cycle${d.PendingCycles > 1 ? 's' : ''} awaiting a decision
+          &middot; next cycle interest ${d.PendingInterestPreview !== null ? fmt(d.PendingInterestPreview) : '-'}
+        </div>
+      </div>
+      <div class="due-cycle-actions">
+        <button type="button" class="btn-ghost" data-tranche="${d.TrancheID}" data-decision="paid">Mark Paid</button>
+        <button type="button" class="btn-primary" data-tranche="${d.TrancheID}" data-decision="reinvested">Reinvest</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+$('dueCyclesList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-tranche]');
+  if (!btn) return;
+  const trancheId = btn.dataset.tranche;
+  const decision = btn.dataset.decision;
+  const row = btn.closest('.due-cycle-row');
+  const buttons = row.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+
+  try {
+    const res = await api({ action: 'settleCycle', adminKey: state.adminKey, trancheId, decision });
+    if (res.error) {
+      alert(res.error);
+      buttons.forEach(b => b.disabled = false);
+      return;
+    }
+    const currentClientId = $('clientSelect').value;
+    const refreshed = await api({ action: 'login', adminKey: state.adminKey });
+    if (refreshed.error) {
+      alert(refreshed.error);
+      return;
+    }
+    state.clients = refreshed.clients;
+    state.entries = refreshed.entries;
+    state.dueCycles = refreshed.dueCycles || [];
+    enterAdminDashboard(currentClientId);
+  } catch (err) {
+    alert('Could not save this action. Please try again.');
+    buttons.forEach(b => b.disabled = false);
+  }
+});
 
 function renderForSelectedClient() {
   const clientId = $('clientSelect').value;
@@ -147,16 +212,18 @@ $('addEntryForm').addEventListener('submit', async (e) => {
       msg.textContent = res.error;
       return;
     }
-    state.entries.push({
-      ClientID: clientId,
-      Date: payload.date,
-      Type: payload.type,
-      Amount: Number(payload.amount),
-      Notes: payload.notes,
-    });
-    renderForSelectedClient();
+    const refreshed = await api({ action: 'login', adminKey: state.adminKey });
+    if (refreshed.error) {
+      msg.textContent = refreshed.error;
+      return;
+    }
+    state.clients = refreshed.clients;
+    state.entries = refreshed.entries;
+    state.dueCycles = refreshed.dueCycles || [];
+    enterAdminDashboard(clientId);
     $('addEntryForm').reset();
     $('entryDate').valueAsDate = new Date();
+    msg.hidden = false;
     msg.textContent = 'Entry added.';
     setTimeout(() => { msg.hidden = true; }, 2500);
   } catch (err) {
@@ -198,6 +265,7 @@ function renderSummaryAndTable(entries) {
       <td>${en.Date}</td>
       <td>${en.Type}</td>
       <td>${fmt(Number(en.Amount))}</td>
+      <td>${en.TrancheID || ''}</td>
       <td>${en.Notes || ''}</td>
     </tr>
   `).join('');
