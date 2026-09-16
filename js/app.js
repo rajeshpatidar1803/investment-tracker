@@ -207,7 +207,7 @@ function renderSummaryAndTable(entries) {
 }
 
 function fmt(n) {
-  return (Number(n) || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  return (Number(n) || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 }
 
 // ---------- Logout ----------
