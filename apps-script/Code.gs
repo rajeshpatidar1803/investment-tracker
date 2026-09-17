@@ -23,11 +23,16 @@
  *
  * Upgrading an existing sheet (Entries -> Ledger, adds TrancheID, builds Main):
  *   Function dropdown > upgradeToLedgerSystem > Run, once.
+ *
+ * Adding the Nifty 50 comparison benchmark tab (one-time, or if you skipped it):
+ *   Function dropdown > addBenchmarksTab > Run, once. Edit the "Benchmarks"
+ *   tab's CAGR (%) column any time to refresh the figures — no redeploy needed.
  */
 
 const CLIENTS_SHEET = 'Clients';
 const ENTRIES_SHEET = 'Ledger';
 const MAIN_SHEET = 'Main';
+const BENCHMARKS_SHEET = 'Benchmarks';
 const ADMIN_KEY = 'CHANGE_ME_ADMIN_KEY';
 const DEFAULT_RATE = 0.13; // 13% p.a., used when a client has no Rate column value
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -81,8 +86,58 @@ function setup() {
   const blank = spreadsheet.getSheetByName('Sheet1');
   if (blank && spreadsheet.getSheets().length > 2) spreadsheet.deleteSheet(blank);
 
+  addBenchmarksTab();
   refreshMainTab();
-  Logger.log('Setup complete: Clients, Ledger and Main tabs are ready.');
+  Logger.log('Setup complete: Clients, Ledger, Main and Benchmarks tabs are ready.');
+}
+
+/**
+ * Creates (or resets) the "Benchmarks" tab used for the Nifty 50 comparison
+ * shown on client dashboards. Safe to run again later — edit the CAGR (%)
+ * column any time in the sheet itself to refresh the figures.
+ */
+function addBenchmarksTab() {
+  const spreadsheet = ss();
+  let sheet = spreadsheet.getSheetByName(BENCHMARKS_SHEET);
+  if (!sheet) sheet = spreadsheet.insertSheet(BENCHMARKS_SHEET);
+  if (sheet.getLastRow() > 0) return; // don't overwrite figures you've already edited
+
+  const note = 'Nifty 50 TRI average rolling CAGR, data through 16-Sep-2026 '
+    + '(source: craytheon.com/charts/nifty-50-rolling-returns). Edit the CAGR '
+    + 'column here any time to refresh — no redeploy needed.';
+  sheet.getRange(1, 1, 1, 3).setValues([['Period', 'CAGR (%)', 'Notes']]);
+  sheet.getRange(2, 1, 3, 3).setValues([
+    ['1Y', 15.6, note],
+    ['3Y', 15.1, note],
+    ['5Y', 15.4, note],
+  ]);
+  sheet.setFrozenRows(1);
+  Logger.log('Benchmarks tab ready.');
+}
+
+function getBenchmarks() {
+  const sheet = ss().getSheetByName(BENCHMARKS_SHEET);
+  if (!sheet) return null;
+  const rows = sheet.getDataRange().getValues();
+  rows.shift();
+  const map = {};
+  let note = '';
+  rows.forEach(r => {
+    if (r[0]) {
+      map[r[0]] = Number(r[1]);
+      if (r[2]) note = r[2];
+    }
+  });
+  return { oneYear: map['1Y'], threeYear: map['3Y'], fiveYear: map['5Y'], note };
+}
+
+/** Weighted-average effective ROI across one client's tranches, weighted by initial investment. */
+function blendedRoi(report, clientId) {
+  const rows = report.filter(r => String(r.ClientID) === String(clientId));
+  const totalInitial = rows.reduce((sum, r) => sum + r.InitialInvestment, 0);
+  if (!totalInitial) return null;
+  const weighted = rows.reduce((sum, r) => sum + r.EffectiveROIPercent * r.InitialInvestment, 0);
+  return Math.round((weighted / totalInitial) * 100) / 100;
 }
 
 /**
@@ -145,8 +200,9 @@ function upgradeToLedgerSystem() {
     }
   }
 
+  addBenchmarksTab();
   refreshMainTab();
-  Logger.log('Upgrade complete: Ledger tab ready with TrancheID, Main tab built.');
+  Logger.log('Upgrade complete: Ledger tab ready with TrancheID, Main and Benchmarks tabs built.');
 }
 
 function addYears(date, n) {
@@ -336,6 +392,8 @@ function login(p) {
   const clients = sheetToObjects(CLIENTS_SHEET);
   const allEntries = sheetToObjects(ENTRIES_SHEET);
 
+  const benchmarks = getBenchmarks();
+
   if (p.adminKey === ADMIN_KEY) {
     const entries = withComputedValues(clients, allEntries);
     const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
@@ -352,7 +410,9 @@ function login(p) {
       totalAccruedInterest: round2(report.reduce((sum, r) => sum + r.InterestAccruedCurrentCycle, 0)),
       totalOutstanding: round2(report.reduce((sum, r) => sum + r.TotalValue, 0) - totalWithdrawals),
     };
-    return { role: 'admin', clients, entries, dueCycles, summary };
+    const clientROI = {};
+    clients.forEach(c => { clientROI[c.ClientID] = blendedRoi(report, c.ClientID); });
+    return { role: 'admin', clients, entries, dueCycles, summary, clientROI, benchmarks };
   }
 
   const client = clients.find(
@@ -361,10 +421,13 @@ function login(p) {
   );
   if (!client) return { error: 'Invalid Client ID or Access Code' };
 
+  const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
+  const report = computeTrancheReport(clients, realEntries);
+  const portfolioROI = blendedRoi(report, client.ClientID);
   const entries = withComputedValues([client], allEntries).filter(
     en => String(en.ClientID) === String(client.ClientID)
   );
-  return { role: 'client', client, entries };
+  return { role: 'client', client, entries, portfolioROI, benchmarks };
 }
 
 function nextTrancheId(clientId, allEntries) {

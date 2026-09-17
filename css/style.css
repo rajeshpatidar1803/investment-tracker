@@ -11,6 +11,10 @@
   --gold-tint: #fbf7ec;
   --positive: #1a7f4b;
   --negative: #c0392b;
+  --teal: #2f7d76;
+  --teal-tint: #e8f3f2;
+  --violet: #5b3fae;
+  --violet-tint: #f0edfb;
   --radius: 10px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.08);
 }
@@ -341,8 +345,76 @@ th {
 
 tbody tr:hover { background: var(--bg); }
 
+.type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.type-badge.investment { background: #e6f4ec; color: var(--positive); }
+.type-badge.withdrawal { background: #fbeaea; color: var(--negative); }
+.type-badge.interest-paid { background: var(--gold-tint); color: var(--gold-dark); }
+.type-badge.reinvested { background: var(--violet-tint); color: var(--violet); }
+.type-badge.current-value { background: var(--bg); color: var(--text-muted); }
+
+.roi-compare {
+  margin: 0 0 24px;
+}
+
+.roi-compare h3 {
+  margin: 4px 0 14px;
+  font-size: 1rem;
+  color: var(--navy);
+}
+
+.roi-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+}
+
+.roi-label {
+  width: 150px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.roi-track {
+  flex: 1;
+  background: var(--bg);
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.roi-fill {
+  height: 100%;
+  border-radius: 6px;
+}
+
+.roi-bar-yours { background: var(--gold); }
+.roi-bar-nifty { background: var(--teal); }
+
+.roi-value {
+  width: 56px;
+  text-align: right;
+  font-weight: 700;
+  color: var(--navy);
+  flex-shrink: 0;
+}
+
+#roiCompare .hint {
+  margin-top: 10px;
+}
+
 @media (max-width: 480px) {
   main { padding: 20px 10px 40px; }
   .card { padding: 18px; }
   .hero-amount { font-size: 1.7rem; }
+  .roi-label { width: 110px; font-size: 0.78rem; }
 }

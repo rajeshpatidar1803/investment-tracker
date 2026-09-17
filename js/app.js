@@ -8,6 +8,9 @@ const state = {
   entries: [],       // entries currently displayed
   dueCycles: [],      // admin only: tranches with an interest cycle awaiting a decision
   summary: null,      // admin only: portfolio-wide totals
+  clientROI: {},      // admin only: blended effective ROI % per ClientID
+  portfolioROI: null, // client only: their own blended effective ROI %
+  benchmarks: null,   // Nifty 50 comparison figures (both roles)
   currentClientId: null,
   currentClientName: '',
 };
@@ -72,11 +75,15 @@ async function doLogin(payload) {
       state.entries = res.entries;
       state.dueCycles = res.dueCycles || [];
       state.summary = res.summary || null;
+      state.clientROI = res.clientROI || {};
+      state.benchmarks = res.benchmarks || null;
       enterAdminDashboard();
     } else {
       state.currentClientId = res.client.ClientID;
       state.currentClientName = res.client.ClientName;
       state.entries = res.entries;
+      state.portfolioROI = res.portfolioROI ?? null;
+      state.benchmarks = res.benchmarks || null;
       enterClientDashboard();
     }
   } catch (err) {
@@ -180,6 +187,8 @@ $('dueCyclesList').addEventListener('click', async (e) => {
     state.entries = refreshed.entries;
     state.dueCycles = refreshed.dueCycles || [];
     state.summary = refreshed.summary || null;
+    state.clientROI = refreshed.clientROI || {};
+    state.benchmarks = refreshed.benchmarks || null;
     enterAdminDashboard(currentClientId);
   } catch (err) {
     alert('Could not save this action. Please try again.');
@@ -192,7 +201,7 @@ function renderForSelectedClient() {
   const client = state.clients.find(c => String(c.ClientID) === String(clientId));
   const entries = state.entries.filter(en => String(en.ClientID) === String(clientId));
   $('clientNameHeading').textContent = client ? `${client.ClientName} (${client.ClientID})` : '';
-  renderSummaryAndTable(entries);
+  renderSummaryAndTable(entries, state.clientROI[clientId]);
 }
 
 function enterClientDashboard() {
@@ -201,7 +210,7 @@ function enterClientDashboard() {
   $('adminControls').hidden = true;
   $('logoutBtn').hidden = false;
   $('clientNameHeading').textContent = `${state.currentClientName} (${state.currentClientId})`;
-  renderSummaryAndTable(state.entries);
+  renderSummaryAndTable(state.entries, state.portfolioROI);
 }
 
 // ---------- Add entry (admin only) ----------
@@ -240,6 +249,8 @@ $('addEntryForm').addEventListener('submit', async (e) => {
     state.entries = refreshed.entries;
     state.dueCycles = refreshed.dueCycles || [];
     state.summary = refreshed.summary || null;
+    state.clientROI = refreshed.clientROI || {};
+    state.benchmarks = refreshed.benchmarks || null;
     enterAdminDashboard(clientId);
     $('addEntryForm').reset();
     $('entryDate').valueAsDate = new Date();
@@ -253,7 +264,7 @@ $('addEntryForm').addEventListener('submit', async (e) => {
 
 // ---------- Rendering ----------
 
-function renderSummaryAndTable(entries) {
+function renderSummaryAndTable(entries, roi) {
   const sorted = [...entries].sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
   let invested = 0, withdrawn = 0, latestValue = null;
@@ -283,7 +294,7 @@ function renderSummaryAndTable(entries) {
   body.innerHTML = descending.map(en => `
     <tr>
       <td>${en.Date}</td>
-      <td>${en.Type}</td>
+      <td><span class="type-badge ${typeBadgeClass(en.Type)}">${en.Type}</span></td>
       <td>${fmt(Number(en.Amount))}</td>
       <td>${en.TrancheID || ''}</td>
       <td>${en.Notes || ''}</td>
@@ -292,6 +303,46 @@ function renderSummaryAndTable(entries) {
 
   $('noEntries').hidden = descending.length > 0;
   $('entriesTable').hidden = descending.length === 0;
+
+  renderROICompare(roi);
+}
+
+function typeBadgeClass(type) {
+  return {
+    'Investment': 'investment',
+    'Withdrawal': 'withdrawal',
+    'Interest Paid': 'interest-paid',
+    'Reinvested': 'reinvested',
+    'Current Value': 'current-value',
+  }[type] || '';
+}
+
+function renderROICompare(roi) {
+  const section = $('roiCompare');
+  const bench = state.benchmarks;
+  if (roi === null || roi === undefined || !bench) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  const rows = [
+    { label: 'Your effective return (CAGR)', value: roi, cls: 'roi-bar-yours' },
+    { label: 'Nifty 50 — 1 Yr avg', value: bench.oneYear, cls: 'roi-bar-nifty' },
+    { label: 'Nifty 50 — 3 Yr avg', value: bench.threeYear, cls: 'roi-bar-nifty' },
+    { label: 'Nifty 50 — 5 Yr avg', value: bench.fiveYear, cls: 'roi-bar-nifty' },
+  ].filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value));
+
+  const max = Math.max(...rows.map(r => r.value), 1);
+  $('roiBars').innerHTML = rows.map(r => `
+    <div class="roi-row">
+      <span class="roi-label">${r.label}</span>
+      <div class="roi-track"><div class="roi-fill ${r.cls}" style="width:${Math.max(4, r.value / max * 100)}%"></div></div>
+      <span class="roi-value">${r.value.toFixed(1)}%</span>
+    </div>
+  `).join('');
+
+  $('roiNote').textContent = bench.note || 'Nifty 50 figures are average rolling CAGR, updated periodically by your advisor.';
 }
 
 function fmt(n) {
@@ -303,7 +354,7 @@ function fmt(n) {
 $('logoutBtn').addEventListener('click', () => {
   Object.assign(state, {
     role: null, adminKey: null, clients: [], entries: [],
-    dueCycles: [], summary: null,
+    dueCycles: [], summary: null, clientROI: {}, portfolioROI: null, benchmarks: null,
     currentClientId: null, currentClientName: '',
   });
   $('dashboardView').hidden = true;
