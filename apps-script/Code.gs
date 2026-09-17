@@ -338,9 +338,21 @@ function login(p) {
 
   if (p.adminKey === ADMIN_KEY) {
     const entries = withComputedValues(clients, allEntries);
-    const report = computeTrancheReport(clients, allEntries.filter(e => e.Type !== 'Current Value'));
+    const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
+    const report = computeTrancheReport(clients, realEntries);
     const dueCycles = report.filter(r => r.PendingCycles > 0);
-    return { role: 'admin', clients, entries, dueCycles };
+    const totalWithdrawals = realEntries
+      .filter(e => e.Type === 'Withdrawal')
+      .reduce((sum, e) => sum + Number(e.Amount), 0);
+    const round2 = n => Math.round(n * 100) / 100;
+    const summary = {
+      totalClients: clients.length,
+      totalInitialInvestment: round2(report.reduce((sum, r) => sum + r.InitialInvestment, 0)),
+      totalCurrentCycleInvestment: round2(report.reduce((sum, r) => sum + r.CurrentCycleAmount, 0)),
+      totalAccruedInterest: round2(report.reduce((sum, r) => sum + r.InterestAccruedCurrentCycle, 0)),
+      totalOutstanding: round2(report.reduce((sum, r) => sum + r.TotalValue, 0) - totalWithdrawals),
+    };
+    return { role: 'admin', clients, entries, dueCycles, summary };
   }
 
   const client = clients.find(

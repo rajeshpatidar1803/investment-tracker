@@ -7,6 +7,7 @@ const state = {
   clients: [],
   entries: [],       // entries currently displayed
   dueCycles: [],      // admin only: tranches with an interest cycle awaiting a decision
+  summary: null,      // admin only: portfolio-wide totals
   currentClientId: null,
   currentClientName: '',
 };
@@ -70,6 +71,7 @@ async function doLogin(payload) {
       state.clients = res.clients;
       state.entries = res.entries;
       state.dueCycles = res.dueCycles || [];
+      state.summary = res.summary || null;
       enterAdminDashboard();
     } else {
       state.currentClientId = res.client.ClientID;
@@ -103,11 +105,27 @@ function enterAdminDashboard(preserveClientId) {
 
   $('entryDate').valueAsDate = new Date();
 
+  renderSummary();
   renderDueCycles();
 
   if (state.clients.length) {
     renderForSelectedClient();
   }
+}
+
+function renderSummary() {
+  const s = state.summary;
+  const section = $('summarySection');
+  if (!s) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  $('summaryOutstanding').textContent = fmt(s.totalOutstanding);
+  $('summaryClients').textContent = s.totalClients;
+  $('summaryInitial').textContent = fmt(s.totalInitialInvestment);
+  $('summaryCycle').textContent = fmt(s.totalCurrentCycleInvestment);
+  $('summaryAccrued').textContent = fmt(s.totalAccruedInterest);
 }
 
 function renderDueCycles() {
@@ -161,6 +179,7 @@ $('dueCyclesList').addEventListener('click', async (e) => {
     state.clients = refreshed.clients;
     state.entries = refreshed.entries;
     state.dueCycles = refreshed.dueCycles || [];
+    state.summary = refreshed.summary || null;
     enterAdminDashboard(currentClientId);
   } catch (err) {
     alert('Could not save this action. Please try again.');
@@ -220,6 +239,7 @@ $('addEntryForm').addEventListener('submit', async (e) => {
     state.clients = refreshed.clients;
     state.entries = refreshed.entries;
     state.dueCycles = refreshed.dueCycles || [];
+    state.summary = refreshed.summary || null;
     enterAdminDashboard(clientId);
     $('addEntryForm').reset();
     $('entryDate').valueAsDate = new Date();
@@ -283,6 +303,7 @@ function fmt(n) {
 $('logoutBtn').addEventListener('click', () => {
   Object.assign(state, {
     role: null, adminKey: null, clients: [], entries: [],
+    dueCycles: [], summary: null,
     currentClientId: null, currentClientName: '',
   });
   $('dashboardView').hidden = true;

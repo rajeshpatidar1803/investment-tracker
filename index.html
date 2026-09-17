@@ -54,6 +54,32 @@
   <section id="dashboardView" class="card" hidden>
 
     <div id="adminControls" hidden>
+      <div id="summarySection" hidden>
+        <h3>Portfolio Summary</h3>
+        <div class="hero-value">
+          <span class="hero-label">Total outstanding as of today</span>
+          <span class="hero-amount" id="summaryOutstanding">-</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <span class="summary-label">Total Clients</span>
+            <span class="summary-value" id="summaryClients">-</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Total Initial Investment</span>
+            <span class="summary-value" id="summaryInitial">-</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Current Cycle Investment</span>
+            <span class="summary-value" id="summaryCycle">-</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Accrued Interest (Current Cycle)</span>
+            <span class="summary-value" id="summaryAccrued">-</span>
+          </div>
+        </div>
+      </div>
+
       <div id="dueCyclesSection" hidden>
         <h3>Interest cycles due</h3>
         <div id="dueCyclesList"></div>

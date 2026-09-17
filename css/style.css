@@ -187,10 +187,23 @@ input:focus, select:focus {
 
 #clientSelect { max-width: 320px; }
 
-#dueCyclesSection h3 {
+#dueCyclesSection h3,
+#summarySection h3 {
   margin: 4px 0 12px;
   font-size: 1rem;
   color: var(--navy);
+}
+
+#summarySection {
+  margin-bottom: 8px;
+}
+
+#summarySection .hero-value {
+  margin: 0 0 16px;
+}
+
+#summarySection .summary-grid {
+  margin: 0;
 }
 
 .due-cycle-row {
