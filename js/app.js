@@ -267,16 +267,19 @@ $('addEntryForm').addEventListener('submit', async (e) => {
 function renderSummaryAndTable(entries, roi) {
   const sorted = [...entries].sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
-  let invested = 0, withdrawn = 0, latestValue = null;
+  let invested = 0, withdrawn = 0, interestPaid = 0, latestValue = null;
   for (const en of sorted) {
     const amt = Number(en.Amount) || 0;
     if (en.Type === 'Investment') invested += amt;
     else if (en.Type === 'Withdrawal') withdrawn += amt;
+    else if (en.Type === 'Interest Paid') interestPaid += amt;
     else if (en.Type === 'Current Value') latestValue = amt; // last one wins, list is sorted by date
   }
   const net = invested - withdrawn;
   const currentValue = latestValue !== null ? latestValue : net;
-  const gain = currentValue - net;
+  // Gain/Loss = growth of what's still invested, plus interest already paid out in
+  // cash (it's still money you earned — it just isn't sitting in the balance above).
+  const gain = (currentValue + interestPaid) - net;
 
   $('heroValue').textContent = fmt(currentValue);
   $('sumInvested').textContent = fmt(invested);

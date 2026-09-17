@@ -281,6 +281,29 @@ function decisionsForTranche(allEntries, trancheId) {
     .sort((a, b) => new Date(a.Date) - new Date(b.Date));
 }
 
+/**
+ * Annualized rate that discounts a series of dated cash flows to zero NPV
+ * (standard XIRR). Used for effective ROI so that interest paid out in cash
+ * is credited at the time it was received, instead of vanishing from the
+ * return just because it's no longer sitting in the tranche.
+ */
+function xirr(cashflows) {
+  const t0 = cashflows[0].date;
+  const years = d => (d - t0) / MS_PER_DAY / 365;
+  const npv = rate => cashflows.reduce((sum, cf) => sum + cf.amount / Math.pow(1 + rate, years(cf.date)), 0);
+
+  let lo = -0.5, hi = 5;
+  let npvLo = npv(lo), npvHi = npv(hi);
+  if (npvLo * npvHi > 0) return null;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const npvMid = npv(mid);
+    if (Math.abs(npvMid) < 1e-6) return mid;
+    if ((npvLo < 0) === (npvMid < 0)) { lo = mid; npvLo = npvMid; } else { hi = mid; }
+  }
+  return (lo + hi) / 2;
+}
+
 /** One row per tranche with everything needed for the Main tab and the UI. */
 function computeTrancheReport(clients, allEntries) {
   const today = new Date();
@@ -292,7 +315,22 @@ function computeTrancheReport(clients, allEntries) {
     const startDate = new Date(inv.Date);
     const walk = walkTrancheCycles(startDate, inv.Amount, rate, decisions, today);
     const ageDays = Math.max(1, Math.round((today - startDate) / MS_PER_DAY));
-    const effectiveRoi = (Math.pow(walk.totalValue / Number(inv.Amount), 365 / ageDays) - 1) * 100;
+
+    const paidFlows = decisions
+      .filter(d => d.Type === 'Interest Paid')
+      .map(d => ({ amount: Number(d.Amount), date: new Date(d.Date) }));
+    const totalPaidOut = paidFlows.reduce((sum, f) => sum + f.amount, 0);
+
+    const cashflows = [{ amount: -Number(inv.Amount), date: startDate }]
+      .concat(paidFlows)
+      .concat([{ amount: walk.totalValue, date: today }]);
+    const xirrRate = xirr(cashflows);
+    // Fallback (shouldn't normally trigger): plain CAGR of the remaining balance only.
+    const effectiveRoi = xirrRate !== null
+      ? xirrRate * 100
+      : (Math.pow(walk.totalValue / Number(inv.Amount), 365 / ageDays) - 1) * 100;
+
+    const totalReturnPercent = ((walk.totalValue + totalPaidOut) / Number(inv.Amount) - 1) * 100;
 
     let pendingPreview = null;
     if (walk.pendingCount > 0) {
@@ -310,8 +348,10 @@ function computeTrancheReport(clients, allEntries) {
       CurrentCycleStartDate: Utilities.formatDate(walk.cycleStartDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
       InterestAccruedCurrentCycle: Math.round(walk.accruedThisCycle * 100) / 100,
       TotalValue: Math.round(walk.totalValue * 100) / 100,
+      TotalPaidOut: Math.round(totalPaidOut * 100) / 100,
       AgeDays: ageDays,
       EffectiveROIPercent: Math.round(effectiveRoi * 100) / 100,
+      TotalReturnPercent: Math.round(totalReturnPercent * 100) / 100,
       PendingCycles: walk.pendingCount,
       PendingInterestPreview: pendingPreview,
     };
@@ -330,14 +370,15 @@ function refreshMainTab() {
 
   const headers = ['Investor Name', 'ClientID', 'TrancheID', 'Initial Investment', 'Date of Initial Investment',
     'Current Cycle Invested Amount', 'Current Cycle Investment Date', 'Interest Accrued (Current Cycle)',
-    'Total Value', 'Investment Age (days)', 'Effective ROI %', 'Cycles Awaiting Decision'];
+    'Total Value', 'Total Interest Paid Out', 'Investment Age (days)', 'Effective ROI % (annualized)',
+    'Total Return % (cumulative)', 'Cycles Awaiting Decision'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.setFrozenRows(1);
 
   if (report.length) {
     const rows = report.map(r => [r.ClientName, r.ClientID, r.TrancheID, r.InitialInvestment, r.InitialDate,
-      r.CurrentCycleAmount, r.CurrentCycleStartDate, r.InterestAccruedCurrentCycle, r.TotalValue,
-      r.AgeDays, r.EffectiveROIPercent, r.PendingCycles]);
+      r.CurrentCycleAmount, r.CurrentCycleStartDate, r.InterestAccruedCurrentCycle, r.TotalValue, r.TotalPaidOut,
+      r.AgeDays, r.EffectiveROIPercent, r.TotalReturnPercent, r.PendingCycles]);
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
   }
 }
