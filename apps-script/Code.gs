@@ -102,14 +102,15 @@ function addBenchmarksTab() {
   if (!sheet) sheet = spreadsheet.insertSheet(BENCHMARKS_SHEET);
   if (sheet.getLastRow() > 0) return; // don't overwrite figures you've already edited
 
-  const note = 'Nifty 50 TRI average rolling CAGR, data through 16-Sep-2026 '
-    + '(source: craytheon.com/charts/nifty-50-rolling-returns). Edit the CAGR '
-    + 'column here any time to refresh — no redeploy needed.';
+  const note = 'Nifty 50 trailing CAGR (price return), data through Sep-2026 '
+    + '(source: returnscreener.com). This is an actual point-in-time trailing '
+    + 'return, not a long-run average — it moves with the market. Edit the '
+    + 'CAGR column here any time to refresh — no redeploy needed.';
   sheet.getRange(1, 1, 1, 3).setValues([['Period', 'CAGR (%)', 'Notes']]);
   sheet.getRange(2, 1, 3, 3).setValues([
-    ['1Y', 15.6, note],
-    ['3Y', 15.1, note],
-    ['5Y', 15.4, note],
+    ['1Y', -6.4, note],
+    ['3Y', 5.4, note],
+    ['5Y', 6.2, note],
   ]);
   sheet.setFrozenRows(1);
   Logger.log('Benchmarks tab ready.');

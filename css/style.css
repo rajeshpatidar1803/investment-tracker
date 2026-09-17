@@ -399,6 +399,7 @@ tbody tr:hover { background: var(--bg); }
 
 .roi-bar-yours { background: var(--gold); }
 .roi-bar-nifty { background: var(--teal); }
+.roi-bar-negative { background: var(--negative); }
 
 .roi-value {
   width: 56px;
@@ -407,6 +408,8 @@ tbody tr:hover { background: var(--bg); }
   color: var(--navy);
   flex-shrink: 0;
 }
+
+.roi-value.negative { color: var(--negative); }
 
 #roiCompare .hint {
   margin-top: 10px;

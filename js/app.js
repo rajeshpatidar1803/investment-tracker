@@ -328,19 +328,24 @@ function renderROICompare(roi) {
 
   const rows = [
     { label: 'Your effective return (CAGR)', value: roi, cls: 'roi-bar-yours' },
-    { label: 'Nifty 50 — 1 Yr avg', value: bench.oneYear, cls: 'roi-bar-nifty' },
-    { label: 'Nifty 50 — 3 Yr avg', value: bench.threeYear, cls: 'roi-bar-nifty' },
-    { label: 'Nifty 50 — 5 Yr avg', value: bench.fiveYear, cls: 'roi-bar-nifty' },
+    { label: 'Nifty 50 — 1 Yr', value: bench.oneYear, cls: 'roi-bar-nifty' },
+    { label: 'Nifty 50 — 3 Yr', value: bench.threeYear, cls: 'roi-bar-nifty' },
+    { label: 'Nifty 50 — 5 Yr', value: bench.fiveYear, cls: 'roi-bar-nifty' },
   ].filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value));
 
-  const max = Math.max(...rows.map(r => r.value), 1);
-  $('roiBars').innerHTML = rows.map(r => `
+  const max = Math.max(...rows.map(r => Math.abs(r.value)), 1);
+  $('roiBars').innerHTML = rows.map(r => {
+    const isNeg = r.value < 0;
+    const widthPct = Math.max(4, Math.abs(r.value) / max * 100);
+    const barClass = isNeg ? 'roi-bar-negative' : r.cls;
+    return `
     <div class="roi-row">
       <span class="roi-label">${r.label}</span>
-      <div class="roi-track"><div class="roi-fill ${r.cls}" style="width:${Math.max(4, r.value / max * 100)}%"></div></div>
-      <span class="roi-value">${r.value.toFixed(1)}%</span>
+      <div class="roi-track"><div class="roi-fill ${barClass}" style="width:${widthPct}%"></div></div>
+      <span class="roi-value${isNeg ? ' negative' : ''}">${r.value.toFixed(1)}%</span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   $('roiNote').textContent = bench.note || 'Nifty 50 figures are average rolling CAGR, updated periodically by your advisor.';
 }
