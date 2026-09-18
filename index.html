@@ -116,6 +116,28 @@
         <div id="dueCyclesList"></div>
       </div>
 
+      <div class="table-block" id="clientsTableSection" hidden>
+        <div class="section-head">
+          <h3>All clients</h3>
+          <span class="section-note">Click a row to open that client</span>
+        </div>
+        <div class="table-scroll">
+          <table id="clientsTable">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th class="num">Net Invested</th>
+                <th class="num">Current Value</th>
+                <th class="num">Gain</th>
+                <th class="num">ROI</th>
+                <th class="num">Cycles Due</th>
+              </tr>
+            </thead>
+            <tbody id="clientsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="client-picker">
         <label>Viewing client
           <select id="clientSelect"></select>

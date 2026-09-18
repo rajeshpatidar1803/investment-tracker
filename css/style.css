@@ -441,6 +441,11 @@ td:nth-child(3), td:nth-child(4) { font-family: var(--mono); }
 .gain-positive { color: var(--pos); }
 .gain-negative { color: var(--neg); }
 
+#clientsTable td:nth-child(n+2) { text-align: right; font-family: var(--mono); }
+#clientsTable tbody tr { cursor: pointer; }
+#clientsTable tbody tr:hover { background: var(--line-2); }
+#clientsTable td .hint { font-size: 12px; }
+
 .type-badge {
   display: inline-block;
   padding: 3px 9px;

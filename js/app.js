@@ -127,11 +127,65 @@ function enterAdminDashboard(preserveClientId) {
 
   renderSummary();
   renderDueCycles();
+  renderClientsTable();
 
   if (state.clients.length) {
     renderForSelectedClient();
   }
 }
+
+/** Per-client totals, using the same math as the single-client view so the numbers agree. */
+function clientTotals(clientId) {
+  let invested = 0, withdrawn = 0, interestPaid = 0, currentValue = 0;
+  for (const en of state.entries) {
+    if (String(en.ClientID) !== String(clientId)) continue;
+    const amt = Number(en.Amount) || 0;
+    if (en.Type === 'Investment') invested += amt;
+    else if (en.Type === 'Withdrawal') withdrawn += amt;
+    else if (en.Type === 'Interest Paid') interestPaid += amt;
+    else if (en.Type === 'Current Value') currentValue = amt;
+  }
+  const net = invested - withdrawn;
+  return { net, currentValue, gain: (currentValue + interestPaid) - net };
+}
+
+function renderClientsTable() {
+  const section = $('clientsTableSection');
+  if (!state.clients.length) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+
+  const rows = state.clients
+    .map(c => {
+      const totals = clientTotals(c.ClientID);
+      const cyclesDue = state.dueCycles
+        .filter(d => String(d.ClientID) === String(c.ClientID))
+        .reduce((sum, d) => sum + (d.PendingCycles || 0), 0);
+      return { client: c, ...totals, roi: state.clientROI[c.ClientID], cyclesDue };
+    })
+    .sort((a, b) => b.currentValue - a.currentValue);
+
+  $('clientsTableBody').innerHTML = rows.map(r => `
+    <tr data-client="${r.client.ClientID}">
+      <td>${r.client.ClientName} <span class="hint">(${r.client.ClientID})</span></td>
+      <td>${fmt(r.net)}</td>
+      <td>${fmt(r.currentValue)}</td>
+      <td class="${r.gain >= 0 ? 'gain-positive' : 'gain-negative'}">${fmt(r.gain)}</td>
+      <td>${r.roi === null || r.roi === undefined ? '-' : r.roi.toFixed(1) + '%'}</td>
+      <td>${r.cyclesDue || '-'}</td>
+    </tr>
+  `).join('');
+}
+
+$('clientsTableBody').addEventListener('click', (e) => {
+  const row = e.target.closest('tr[data-client]');
+  if (!row) return;
+  $('clientSelect').value = row.dataset.client;
+  renderForSelectedClient();
+  $('clientNameHeading').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 function renderSummary() {
   const s = state.summary;
