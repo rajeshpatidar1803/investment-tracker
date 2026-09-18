@@ -31,6 +31,17 @@
  * Adding the "Other Investments" tab (lets clients log MF/Stocks/Gold/Real
  * Estate holdings themselves, from their own dashboard):
  *   Function dropdown > addOtherInvestmentsTab > Run, once.
+ *
+ * Security tools:
+ *   addAuditLogTab      — run once; creates the AuditLog tab that records every
+ *                         login (success, failure, lockout) and every change.
+ *   rotateAllAccessCodes — regenerates every client's code as a 16-character
+ *                         random string and prints the list in the execution log
+ *                         so you can distribute them. Old codes stop working.
+ *   resetAccessCode('C003') — regenerates one client's code.
+ *
+ * Logins are rate limited: 5 failed attempts against the same Client ID (or the
+ * Admin Key) locks that identifier out for 15 minutes.
  */
 
 const CLIENTS_SHEET = 'Clients';
@@ -38,9 +49,15 @@ const ENTRIES_SHEET = 'Ledger';
 const MAIN_SHEET = 'Main';
 const BENCHMARKS_SHEET = 'Benchmarks';
 const OTHER_INVESTMENTS_SHEET = 'OtherInvestments';
+const AUDIT_SHEET = 'AuditLog';
 const ADMIN_KEY = 'CHANGE_ME_ADMIN_KEY';
 const DEFAULT_RATE = 0.13; // 13% p.a., used when a client has no Rate column value
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Brute-force protection: after MAX_LOGIN_ATTEMPTS failures against the same
+// identifier, that identifier is refused for LOCKOUT_SECONDS.
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_SECONDS = 900; // 15 minutes
 
 function doGet(e) {
   return handle(e.parameter);
@@ -63,8 +80,57 @@ function handle(p) {
     else result = { error: 'Unknown action' };
     return json(result);
   } catch (err) {
-    return json({ error: err.message });
+    // Log the detail for you, return something generic to the caller so internal
+    // structure isn't exposed to whoever is poking at the endpoint.
+    try { audit('ERROR', p && p.action, 'failed', String(err && err.message)); } catch (ignored) {}
+    return json({ error: 'Something went wrong. Please try again.' });
   }
+}
+
+// ---------- Rate limiting ----------
+
+function attemptKey(identifier) {
+  return 'login_fail_' + String(identifier).toLowerCase();
+}
+
+function isLockedOut(identifier) {
+  const raw = CacheService.getScriptCache().get(attemptKey(identifier));
+  return Number(raw || 0) >= MAX_LOGIN_ATTEMPTS;
+}
+
+function recordFailedAttempt(identifier) {
+  const cache = CacheService.getScriptCache();
+  const key = attemptKey(identifier);
+  const count = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(count), LOCKOUT_SECONDS);
+  return count;
+}
+
+function clearFailedAttempts(identifier) {
+  CacheService.getScriptCache().remove(attemptKey(identifier));
+}
+
+// ---------- Audit log ----------
+
+/** Appends one row to the AuditLog tab. Never throws — logging must not break a request. */
+function audit(event, identifier, result, detail) {
+  try {
+    const sheet = ss().getSheetByName(AUDIT_SHEET);
+    if (!sheet) return;
+    sheet.appendRow([new Date(), event, identifier || '', result || '', detail || '']);
+  } catch (err) {
+    // swallow
+  }
+}
+
+function addAuditLogTab() {
+  const spreadsheet = ss();
+  let sheet = spreadsheet.getSheetByName(AUDIT_SHEET);
+  if (!sheet) sheet = spreadsheet.insertSheet(AUDIT_SHEET);
+  if (sheet.getLastRow() > 0) return;
+  sheet.getRange(1, 1, 1, 5).setValues([['Timestamp', 'Event', 'Identifier', 'Result', 'Detail']]);
+  sheet.setFrozenRows(1);
+  Logger.log('AuditLog tab ready.');
 }
 
 function ss() {
@@ -96,8 +162,9 @@ function setup() {
 
   addBenchmarksTab();
   addOtherInvestmentsTab();
+  addAuditLogTab();
   refreshMainTab();
-  Logger.log('Setup complete: Clients, Ledger, Main, Benchmarks and OtherInvestments tabs are ready.');
+  Logger.log('Setup complete: Clients, Ledger, Main, Benchmarks, OtherInvestments and AuditLog tabs are ready.');
 }
 
 /**
@@ -464,12 +531,29 @@ function withComputedValues(clients, allEntries) {
 }
 
 function login(p) {
+  // Identify the login attempt for rate-limiting purposes: the admin key attempt
+  // is tracked as one bucket, each client ID as its own.
+  const attemptId = p.adminKey !== undefined && p.adminKey !== '' ? 'ADMIN' : String(p.clientId || 'unknown');
+
+  if (isLockedOut(attemptId)) {
+    audit('LOGIN_BLOCKED', attemptId, 'locked out', 'too many failed attempts');
+    return { error: 'Too many failed attempts. Please try again in 15 minutes.' };
+  }
+
+  if (p.adminKey !== undefined && p.adminKey !== '' && p.adminKey !== ADMIN_KEY) {
+    const count = recordFailedAttempt(attemptId);
+    audit('LOGIN_FAILED', 'ADMIN', 'bad admin key', 'attempt ' + count);
+    return { error: 'Invalid Admin Key' };
+  }
+
   const clients = sheetToObjects(CLIENTS_SHEET);
   const allEntries = sheetToObjects(ENTRIES_SHEET);
 
   const benchmarks = getBenchmarks();
 
   if (p.adminKey === ADMIN_KEY) {
+    clearFailedAttempts(attemptId);
+    audit('LOGIN_SUCCESS', 'ADMIN', 'ok', '');
     const entries = withComputedValues(clients, allEntries);
     const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
     const report = computeTrancheReport(clients, realEntries);
@@ -492,7 +576,14 @@ function login(p) {
   }
 
   const client = authenticateClient(p.clientId, p.accessCode);
-  if (!client) return { error: 'Invalid Client ID or Access Code' };
+  if (!client) {
+    const count = recordFailedAttempt(attemptId);
+    audit('LOGIN_FAILED', p.clientId || '(none)', 'bad credentials', 'attempt ' + count);
+    return { error: 'Invalid Client ID or Access Code' };
+  }
+
+  clearFailedAttempts(attemptId);
+  audit('LOGIN_SUCCESS', client.ClientID, 'ok', client.ClientName);
 
   const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
   const report = computeTrancheReport(clients, realEntries);
@@ -514,6 +605,80 @@ function authenticateClient(clientId, accessCode) {
   return clients.find(
     c => String(c.ClientID) === String(clientId) && String(c.AccessCode) === String(accessCode)
   ) || null;
+}
+
+// ---------- Access codes ----------
+
+// Ambiguous characters (O/0, l/1/I) are left out so codes survive being read
+// aloud or typed from a message without support calls.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const CODE_LENGTH = 16;
+
+function generateAccessCode() {
+  const bytes = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  let code = '';
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    // Derive an index from the UUID hex so codes come from Google's RNG, not Math.random.
+    const hexPair = parseInt(bytes.substr(i * 2, 2), 16);
+    code += CODE_ALPHABET.charAt(hexPair % CODE_ALPHABET.length);
+  }
+  return code;
+}
+
+/**
+ * Regenerates every client's Access Code with a fresh 16-character code and
+ * logs the new list so you can distribute them. Run this if the old codes may
+ * have leaked — the previous 8-character ones were generated outside the
+ * system and shared in plain text, so they're worth replacing.
+ *
+ * Clients must be given their new code; their old one stops working immediately.
+ */
+function rotateAllAccessCodes() {
+  const sheet = ss().getSheetByName(CLIENTS_SHEET);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idCol = headers.indexOf('ClientID');
+  const nameCol = headers.indexOf('ClientName');
+  const codeCol = headers.indexOf('AccessCode');
+  if (codeCol === -1) {
+    Logger.log('No AccessCode column found.');
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lines = ['ClientID\tClientName\tNewAccessCode'];
+  for (let row = 2; row <= lastRow; row++) {
+    const id = sheet.getRange(row, idCol + 1).getValue();
+    if (!id) continue;
+    const name = sheet.getRange(row, nameCol + 1).getValue();
+    const code = generateAccessCode();
+    sheet.getRange(row, codeCol + 1).setValue(code);
+    lines.push(id + '\t' + name + '\t' + code);
+  }
+
+  audit('CODES_ROTATED', 'ADMIN', 'ok', (lines.length - 1) + ' clients');
+  Logger.log(lines.join('\n'));
+  Logger.log('\nCopy the list above and send each client their new code. Their old code no longer works.');
+}
+
+/** Regenerates one client's Access Code. Pass the ClientID, e.g. resetAccessCode('C003'). */
+function resetAccessCode(clientId) {
+  const sheet = ss().getSheetByName(CLIENTS_SHEET);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idCol = headers.indexOf('ClientID');
+  const codeCol = headers.indexOf('AccessCode');
+  const lastRow = sheet.getLastRow();
+
+  for (let row = 2; row <= lastRow; row++) {
+    if (String(sheet.getRange(row, idCol + 1).getValue()) === String(clientId)) {
+      const code = generateAccessCode();
+      sheet.getRange(row, codeCol + 1).setValue(code);
+      clearFailedAttempts(clientId);
+      audit('CODE_RESET', clientId, 'ok', '');
+      Logger.log('New access code for ' + clientId + ': ' + code);
+      return;
+    }
+  }
+  Logger.log('Client not found: ' + clientId);
 }
 
 const OTHER_INVESTMENT_TYPES = ['Mutual Fund', 'Stocks', 'Gold', 'Real Estate', 'Other'];
@@ -565,6 +730,7 @@ function addOtherInvestment(p) {
   const now = new Date();
   sheet.appendRow([holdingId, p.clientId, p.type, p.name, Number(p.investedAmount), Number(p.currentValue),
     p.date, p.notes || '', now]);
+  audit('ADD_HOLDING', p.clientId, 'ok', p.type + ' / ' + p.name);
   return { success: true, holdingId };
 }
 
@@ -585,6 +751,7 @@ function updateOtherInvestmentValue(p) {
     if (String(data[i][idCol]) === String(p.holdingId) && String(data[i][clientCol]) === String(p.clientId)) {
       sheet.getRange(i + 1, valueCol + 1).setValue(Number(p.currentValue));
       sheet.getRange(i + 1, updatedCol + 1).setValue(new Date());
+      audit('UPDATE_HOLDING', p.clientId, 'ok', p.holdingId + ' -> ' + p.currentValue);
       return { success: true };
     }
   }
@@ -605,6 +772,7 @@ function deleteOtherInvestment(p) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idCol]) === String(p.holdingId) && String(data[i][clientCol]) === String(p.clientId)) {
       sheet.deleteRow(i + 1);
+      audit('DELETE_HOLDING', p.clientId, 'ok', p.holdingId);
       return { success: true };
     }
   }
@@ -629,6 +797,7 @@ function addEntry(p) {
     trancheId = nextTrancheId(p.clientId, sheetToObjects(ENTRIES_SHEET));
   }
   sheet.appendRow([p.clientId, p.date, p.type, Number(p.amount), p.notes || '', new Date(), trancheId]);
+  audit('ADD_ENTRY', p.clientId, 'ok', p.type + ' ' + p.amount + (trancheId ? ' / ' + trancheId : ''));
   refreshMainTab();
   return { success: true, trancheId };
 }
@@ -669,6 +838,7 @@ function settleCycle(p) {
 
   const sheet = ss().getSheetByName(ENTRIES_SHEET);
   sheet.appendRow([invEntry.ClientID, dateStr, type, amount, notes, new Date(), p.trancheId]);
+  audit('SETTLE_CYCLE', invEntry.ClientID, type, p.trancheId + ' / ' + amount);
   refreshMainTab();
   return { success: true, amount };
 }
