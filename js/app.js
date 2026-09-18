@@ -69,15 +69,17 @@ $('adminLoginForm').addEventListener('submit', async (e) => {
   });
 });
 
-async function doLogin(payload) {
+async function doLogin(payload, opts = {}) {
   setLoading(true);
   hideError();
   try {
     const res = await api(payload);
     if (res.error) {
-      showError(res.error);
+      // A restored session with stale credentials just drops back to the login screen.
+      if (opts.silent) clearSession(); else showError(res.error);
       return;
     }
+    saveSession(payload);
     state.role = res.role;
     if (res.role === 'admin') {
       state.adminKey = payload.adminKey;
@@ -100,10 +102,35 @@ async function doLogin(payload) {
       enterClientDashboard();
     }
   } catch (err) {
-    showError('Could not reach the server. Check WEB_APP_URL in js/app.js.');
+    if (!opts.silent) showError('Could not reach the server. Check WEB_APP_URL in js/app.js.');
   } finally {
     setLoading(false);
   }
+}
+
+// ---------- Session persistence ----------
+// Kept in sessionStorage so a refresh doesn't log you out. It clears itself
+// when the tab is closed, so credentials don't linger on a shared machine.
+
+const SESSION_KEY = 'vega-session';
+
+function saveSession(payload) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload)); } catch (err) { /* private mode */ }
+}
+
+function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch (err) { /* private mode */ }
+}
+
+function restoreSession() {
+  let saved = null;
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    saved = raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return;
+  }
+  if (saved && saved.action === 'login') doLogin(saved, { silent: true });
 }
 
 // ---------- Dashboard entry points ----------
@@ -620,6 +647,7 @@ $('logoutBtn').addEventListener('click', () => {
     dueCycles: [], summary: null, clientROI: {}, portfolioROI: null, benchmarks: null,
     otherInvestments: [], currentClientId: null, currentClientName: '',
   });
+  clearSession();
   $('dashboardView').hidden = true;
   $('logoutBtn').hidden = true;
   $('loginView').hidden = false;
@@ -632,3 +660,5 @@ $('logoutBtn').addEventListener('click', () => {
 function setLoading(v) { $('loading').hidden = !v; }
 function showError(msg) { const el = $('loginError'); el.textContent = msg; el.hidden = false; }
 function hideError() { $('loginError').hidden = true; }
+
+restoreSession();
