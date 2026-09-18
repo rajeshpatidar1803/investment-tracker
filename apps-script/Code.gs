@@ -27,12 +27,17 @@
  * Adding the Nifty 50 comparison benchmark tab (one-time, or if you skipped it):
  *   Function dropdown > addBenchmarksTab > Run, once. Edit the "Benchmarks"
  *   tab's CAGR (%) column any time to refresh the figures — no redeploy needed.
+ *
+ * Adding the "Other Investments" tab (lets clients log MF/Stocks/Gold/Real
+ * Estate holdings themselves, from their own dashboard):
+ *   Function dropdown > addOtherInvestmentsTab > Run, once.
  */
 
 const CLIENTS_SHEET = 'Clients';
 const ENTRIES_SHEET = 'Ledger';
 const MAIN_SHEET = 'Main';
 const BENCHMARKS_SHEET = 'Benchmarks';
+const OTHER_INVESTMENTS_SHEET = 'OtherInvestments';
 const ADMIN_KEY = 'CHANGE_ME_ADMIN_KEY';
 const DEFAULT_RATE = 0.13; // 13% p.a., used when a client has no Rate column value
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -52,6 +57,9 @@ function handle(p) {
     if (p.action === 'login') result = login(p);
     else if (p.action === 'addEntry') result = addEntry(p);
     else if (p.action === 'settleCycle') result = settleCycle(p);
+    else if (p.action === 'addOtherInvestment') result = addOtherInvestment(p);
+    else if (p.action === 'updateOtherInvestmentValue') result = updateOtherInvestmentValue(p);
+    else if (p.action === 'deleteOtherInvestment') result = deleteOtherInvestment(p);
     else result = { error: 'Unknown action' };
     return json(result);
   } catch (err) {
@@ -87,8 +95,33 @@ function setup() {
   if (blank && spreadsheet.getSheets().length > 2) spreadsheet.deleteSheet(blank);
 
   addBenchmarksTab();
+  addOtherInvestmentsTab();
   refreshMainTab();
-  Logger.log('Setup complete: Clients, Ledger, Main and Benchmarks tabs are ready.');
+  Logger.log('Setup complete: Clients, Ledger, Main, Benchmarks and OtherInvestments tabs are ready.');
+}
+
+/**
+ * Creates the "OtherInvestments" tab, where clients log their own holdings
+ * outside Vegacapital (Mutual Funds, Stocks, Gold, Real Estate, etc.) for
+ * comparison. Safe to run again later.
+ */
+function addOtherInvestmentsTab() {
+  const spreadsheet = ss();
+  let sheet = spreadsheet.getSheetByName(OTHER_INVESTMENTS_SHEET);
+  if (!sheet) sheet = spreadsheet.insertSheet(OTHER_INVESTMENTS_SHEET);
+  if (sheet.getLastRow() > 0) return;
+  sheet.getRange(1, 1, 1, 9).setValues([[
+    'HoldingID', 'ClientID', 'Type', 'Name', 'InvestedAmount', 'CurrentValue', 'DateAdded', 'Notes', 'LastUpdated',
+  ]]);
+  sheet.setFrozenRows(1);
+  Logger.log('OtherInvestments tab ready.');
+}
+
+/** Returns [] instead of throwing when the sheet doesn't exist yet (not migrated). */
+function safeSheetToObjects(sheetName) {
+  const sheet = ss().getSheetByName(sheetName);
+  if (!sheet) return [];
+  return sheetToObjects(sheetName);
 }
 
 /**
@@ -454,13 +487,11 @@ function login(p) {
     };
     const clientROI = {};
     clients.forEach(c => { clientROI[c.ClientID] = blendedRoi(report, c.ClientID); });
-    return { role: 'admin', clients, entries, dueCycles, summary, clientROI, benchmarks };
+    const otherInvestments = computeOtherInvestmentReport(safeSheetToObjects(OTHER_INVESTMENTS_SHEET));
+    return { role: 'admin', clients, entries, dueCycles, summary, clientROI, benchmarks, otherInvestments };
   }
 
-  const client = clients.find(
-    c => String(c.ClientID) === String(p.clientId) &&
-         String(c.AccessCode) === String(p.accessCode)
-  );
+  const client = authenticateClient(p.clientId, p.accessCode);
   if (!client) return { error: 'Invalid Client ID or Access Code' };
 
   const realEntries = allEntries.filter(e => e.Type !== 'Current Value');
@@ -469,7 +500,115 @@ function login(p) {
   const entries = withComputedValues([client], allEntries).filter(
     en => String(en.ClientID) === String(client.ClientID)
   );
-  return { role: 'client', client, entries, portfolioROI, benchmarks };
+
+  const otherInvestments = computeOtherInvestmentReport(safeSheetToObjects(OTHER_INVESTMENTS_SHEET))
+    .filter(h => String(h.ClientID) === String(client.ClientID));
+  const otherTypeROI = {};
+  OTHER_INVESTMENT_TYPES.forEach(t => { otherTypeROI[t] = blendedTypeROI(otherInvestments, t); });
+
+  return { role: 'client', client, entries, portfolioROI, benchmarks, otherInvestments, otherTypeROI };
+}
+
+function authenticateClient(clientId, accessCode) {
+  const clients = sheetToObjects(CLIENTS_SHEET);
+  return clients.find(
+    c => String(c.ClientID) === String(clientId) && String(c.AccessCode) === String(accessCode)
+  ) || null;
+}
+
+const OTHER_INVESTMENT_TYPES = ['Mutual Fund', 'Stocks', 'Gold', 'Real Estate', 'Other'];
+
+/** Adds annualized CAGR and simple cumulative gain % to each holding row. */
+function computeOtherInvestmentReport(holdings) {
+  const today = new Date();
+  return holdings.map(h => {
+    const invested = Number(h.InvestedAmount);
+    const current = Number(h.CurrentValue);
+    const dateAdded = new Date(h.DateAdded);
+    const ageDays = Math.max(1, Math.round((today - dateAdded) / MS_PER_DAY));
+    const cagr = invested > 0 ? (Math.pow(current / invested, 365 / ageDays) - 1) * 100 : null;
+    const gainPercent = invested > 0 ? (current / invested - 1) * 100 : null;
+    return Object.assign({}, h, {
+      InvestedAmount: invested,
+      CurrentValue: current,
+      AgeDays: ageDays,
+      CAGRPercent: cagr !== null ? Math.round(cagr * 100) / 100 : null,
+      GainPercent: gainPercent !== null ? Math.round(gainPercent * 100) / 100 : null,
+    });
+  });
+}
+
+/** Weighted-average CAGR (by invested amount) across a client's holdings of one type. */
+function blendedTypeROI(report, type) {
+  const rows = report.filter(r => r.Type === type && r.CAGRPercent !== null);
+  const totalInvested = rows.reduce((sum, r) => sum + r.InvestedAmount, 0);
+  if (!totalInvested) return null;
+  const weighted = rows.reduce((sum, r) => sum + r.CAGRPercent * r.InvestedAmount, 0);
+  return Math.round((weighted / totalInvested) * 100) / 100;
+}
+
+function nextHoldingId(clientId, allHoldings) {
+  const count = allHoldings.filter(h => String(h.ClientID) === String(clientId)).length;
+  return clientId + '-H' + (count + 1);
+}
+
+/** Client action: log a new holding outside Vegacapital (MF, Stocks, Gold, Real Estate, ...). */
+function addOtherInvestment(p) {
+  const client = authenticateClient(p.clientId, p.accessCode);
+  if (!client) return { error: 'Invalid Client ID or Access Code' };
+  if (!p.type || !p.name || p.investedAmount === undefined || p.currentValue === undefined || !p.date) {
+    return { error: 'Missing required fields' };
+  }
+  const sheet = ss().getSheetByName(OTHER_INVESTMENTS_SHEET);
+  if (!sheet) return { error: 'OtherInvestments tab not set up yet. Ask your advisor to run addOtherInvestmentsTab().' };
+  const holdingId = nextHoldingId(p.clientId, safeSheetToObjects(OTHER_INVESTMENTS_SHEET));
+  const now = new Date();
+  sheet.appendRow([holdingId, p.clientId, p.type, p.name, Number(p.investedAmount), Number(p.currentValue),
+    p.date, p.notes || '', now]);
+  return { success: true, holdingId };
+}
+
+/** Client action: update a holding's current value (e.g. checked its latest worth elsewhere). */
+function updateOtherInvestmentValue(p) {
+  const client = authenticateClient(p.clientId, p.accessCode);
+  if (!client) return { error: 'Invalid Client ID or Access Code' };
+  if (!p.holdingId || p.currentValue === undefined) return { error: 'Missing required fields' };
+  const sheet = ss().getSheetByName(OTHER_INVESTMENTS_SHEET);
+  if (!sheet) return { error: 'Holding not found' };
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('HoldingID');
+  const clientCol = headers.indexOf('ClientID');
+  const valueCol = headers.indexOf('CurrentValue');
+  const updatedCol = headers.indexOf('LastUpdated');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(p.holdingId) && String(data[i][clientCol]) === String(p.clientId)) {
+      sheet.getRange(i + 1, valueCol + 1).setValue(Number(p.currentValue));
+      sheet.getRange(i + 1, updatedCol + 1).setValue(new Date());
+      return { success: true };
+    }
+  }
+  return { error: 'Holding not found' };
+}
+
+/** Client action: remove a holding they no longer want tracked. */
+function deleteOtherInvestment(p) {
+  const client = authenticateClient(p.clientId, p.accessCode);
+  if (!client) return { error: 'Invalid Client ID or Access Code' };
+  if (!p.holdingId) return { error: 'Missing holdingId' };
+  const sheet = ss().getSheetByName(OTHER_INVESTMENTS_SHEET);
+  if (!sheet) return { error: 'Holding not found' };
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('HoldingID');
+  const clientCol = headers.indexOf('ClientID');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(p.holdingId) && String(data[i][clientCol]) === String(p.clientId)) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { error: 'Holding not found' };
 }
 
 function nextTrancheId(clientId, allEntries) {

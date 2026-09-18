@@ -415,6 +415,60 @@ tbody tr:hover { background: var(--bg); }
   margin-top: 10px;
 }
 
+.sip-calc {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.sip-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  border: none;
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.sip-body {
+  padding: 16px;
+}
+
+.sip-body .summary-grid {
+  margin: 12px 0 0;
+}
+
+.other-investments h3 {
+  margin: 4px 0 14px;
+  font-size: 1rem;
+  color: var(--navy);
+}
+
+.other-investments {
+  margin-top: 28px;
+}
+
+#holdingsTable td.gain-positive { color: var(--positive); font-weight: 600; }
+#holdingsTable td.gain-negative { color: var(--negative); font-weight: 600; }
+
+.holding-actions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.holding-actions button {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 480px) {
   main { padding: 20px 10px 40px; }
   .card { padding: 18px; }

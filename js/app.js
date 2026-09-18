@@ -4,6 +4,7 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZXEJsYmuM6DF5j0_4
 const state = {
   role: null,       // 'admin' | 'client'
   adminKey: null,
+  clientAccessCode: null, // client only: kept so they can add/edit/delete their own other-investments
   clients: [],
   entries: [],       // entries currently displayed
   dueCycles: [],      // admin only: tranches with an interest cycle awaiting a decision
@@ -11,8 +12,17 @@ const state = {
   clientROI: {},      // admin only: blended effective ROI % per ClientID
   portfolioROI: null, // client only: their own blended effective ROI %
   benchmarks: null,   // Nifty 50 comparison figures (both roles)
+  otherInvestments: [], // admin: all clients' holdings; client: just their own
   currentClientId: null,
   currentClientName: '',
+};
+
+const OTHER_INVESTMENT_COLORS = {
+  'Mutual Fund': '#5b3fae',
+  'Stocks': '#2563a8',
+  'Gold': '#b8860b',
+  'Real Estate': '#52616b',
+  'Other': '#667085',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -77,13 +87,16 @@ async function doLogin(payload) {
       state.summary = res.summary || null;
       state.clientROI = res.clientROI || {};
       state.benchmarks = res.benchmarks || null;
+      state.otherInvestments = res.otherInvestments || [];
       enterAdminDashboard();
     } else {
       state.currentClientId = res.client.ClientID;
       state.currentClientName = res.client.ClientName;
+      state.clientAccessCode = payload.accessCode;
       state.entries = res.entries;
       state.portfolioROI = res.portfolioROI ?? null;
       state.benchmarks = res.benchmarks || null;
+      state.otherInvestments = res.otherInvestments || [];
       enterClientDashboard();
     }
   } catch (err) {
@@ -189,6 +202,7 @@ $('dueCyclesList').addEventListener('click', async (e) => {
     state.summary = refreshed.summary || null;
     state.clientROI = refreshed.clientROI || {};
     state.benchmarks = refreshed.benchmarks || null;
+    state.otherInvestments = refreshed.otherInvestments || [];
     enterAdminDashboard(currentClientId);
   } catch (err) {
     alert('Could not save this action. Please try again.');
@@ -201,7 +215,8 @@ function renderForSelectedClient() {
   const client = state.clients.find(c => String(c.ClientID) === String(clientId));
   const entries = state.entries.filter(en => String(en.ClientID) === String(clientId));
   $('clientNameHeading').textContent = client ? `${client.ClientName} (${client.ClientID})` : '';
-  renderSummaryAndTable(entries, state.clientROI[clientId]);
+  renderSummaryAndTable(entries, state.clientROI[clientId], clientId);
+  renderOtherInvestments(clientId, false);
 }
 
 function enterClientDashboard() {
@@ -210,7 +225,8 @@ function enterClientDashboard() {
   $('adminControls').hidden = true;
   $('logoutBtn').hidden = false;
   $('clientNameHeading').textContent = `${state.currentClientName} (${state.currentClientId})`;
-  renderSummaryAndTable(state.entries, state.portfolioROI);
+  renderSummaryAndTable(state.entries, state.portfolioROI, state.currentClientId);
+  renderOtherInvestments(state.currentClientId, true);
 }
 
 // ---------- Add entry (admin only) ----------
@@ -251,6 +267,7 @@ $('addEntryForm').addEventListener('submit', async (e) => {
     state.summary = refreshed.summary || null;
     state.clientROI = refreshed.clientROI || {};
     state.benchmarks = refreshed.benchmarks || null;
+    state.otherInvestments = refreshed.otherInvestments || [];
     enterAdminDashboard(clientId);
     $('addEntryForm').reset();
     $('entryDate').valueAsDate = new Date();
@@ -264,7 +281,7 @@ $('addEntryForm').addEventListener('submit', async (e) => {
 
 // ---------- Rendering ----------
 
-function renderSummaryAndTable(entries, roi) {
+function renderSummaryAndTable(entries, roi, clientId) {
   const sorted = [...entries].sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
   let invested = 0, withdrawn = 0, interestPaid = 0, latestValue = null;
@@ -307,7 +324,7 @@ function renderSummaryAndTable(entries, roi) {
   $('noEntries').hidden = descending.length > 0;
   $('entriesTable').hidden = descending.length === 0;
 
-  renderROICompare(roi);
+  renderROICompare(roi, clientId);
 }
 
 function typeBadgeClass(type) {
@@ -320,37 +337,221 @@ function typeBadgeClass(type) {
   }[type] || '';
 }
 
-function renderROICompare(roi) {
+/** Weighted-average CAGR (by invested amount) for one investment type, from a holdings list. */
+function computeTypeROI(holdings, type) {
+  const rows = holdings.filter(h => h.Type === type && h.CAGRPercent !== null && h.CAGRPercent !== undefined);
+  const totalInvested = rows.reduce((sum, r) => sum + Number(r.InvestedAmount), 0);
+  if (!totalInvested) return null;
+  const weighted = rows.reduce((sum, r) => sum + r.CAGRPercent * Number(r.InvestedAmount), 0);
+  return weighted / totalInvested;
+}
+
+function renderROICompare(roi, clientId) {
   const section = $('roiCompare');
   const bench = state.benchmarks;
-  if (roi === null || roi === undefined || !bench) {
+
+  const holdings = clientId
+    ? state.otherInvestments.filter(h => String(h.ClientID) === String(clientId))
+    : [];
+  const typeRows = Object.keys(OTHER_INVESTMENT_COLORS)
+    .map(type => ({ label: type, value: computeTypeROI(holdings, type), color: OTHER_INVESTMENT_COLORS[type] }))
+    .filter(r => r.value !== null);
+
+  if ((roi === null || roi === undefined) && !bench && typeRows.length === 0) {
     section.hidden = true;
     return;
   }
   section.hidden = false;
 
-  const rows = [
-    { label: 'Your effective return (CAGR)', value: roi, cls: 'roi-bar-yours' },
-    { label: 'Nifty 50 — 1 Yr', value: bench.oneYear, cls: 'roi-bar-nifty' },
-    { label: 'Nifty 50 — 3 Yr', value: bench.threeYear, cls: 'roi-bar-nifty' },
-    { label: 'Nifty 50 — 5 Yr', value: bench.fiveYear, cls: 'roi-bar-nifty' },
-  ].filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value));
+  const rows = [];
+  if (roi !== null && roi !== undefined) rows.push({ label: 'Your effective return (CAGR)', value: roi, cls: 'roi-bar-yours' });
+  if (bench) {
+    rows.push({ label: 'Nifty 50 — 1 Yr', value: bench.oneYear, cls: 'roi-bar-nifty' });
+    rows.push({ label: 'Nifty 50 — 3 Yr', value: bench.threeYear, cls: 'roi-bar-nifty' });
+    rows.push({ label: 'Nifty 50 — 5 Yr', value: bench.fiveYear, cls: 'roi-bar-nifty' });
+  }
+  typeRows.forEach(r => rows.push({ label: r.label, value: r.value, color: r.color }));
 
-  const max = Math.max(...rows.map(r => Math.abs(r.value)), 1);
-  $('roiBars').innerHTML = rows.map(r => {
+  const validRows = rows.filter(r => r.value !== null && r.value !== undefined && !isNaN(r.value));
+  const max = Math.max(...validRows.map(r => Math.abs(r.value)), 1);
+  $('roiBars').innerHTML = validRows.map(r => {
     const isNeg = r.value < 0;
     const widthPct = Math.max(4, Math.abs(r.value) / max * 100);
-    const barClass = isNeg ? 'roi-bar-negative' : r.cls;
+    const barClass = isNeg ? 'roi-bar-negative' : (r.cls || '');
+    const barStyle = `width:${widthPct}%` + (r.color && !isNeg ? `;background:${r.color}` : '');
     return `
     <div class="roi-row">
       <span class="roi-label">${r.label}</span>
-      <div class="roi-track"><div class="roi-fill ${barClass}" style="width:${widthPct}%"></div></div>
+      <div class="roi-track"><div class="roi-fill ${barClass}" style="${barStyle}"></div></div>
       <span class="roi-value${isNeg ? ' negative' : ''}">${r.value.toFixed(1)}%</span>
     </div>
   `;
   }).join('');
 
-  $('roiNote').textContent = bench.note || 'Nifty 50 figures are average rolling CAGR, updated periodically by your advisor.';
+  $('roiNote').textContent = (bench && bench.note) || 'Figures shown are annualized (CAGR).';
+}
+
+// ---------- SIP calculator ----------
+
+$('sipToggle').addEventListener('click', () => {
+  const body = $('sipBody');
+  body.hidden = !body.hidden;
+  $('sipToggleIcon').innerHTML = body.hidden ? '&#9662;' : '&#9652;';
+});
+
+$('sipCalcBtn').addEventListener('click', () => {
+  const amount = Number($('sipAmount').value);
+  const rate = Number($('sipRate').value);
+  const years = Number($('sipYears').value);
+  const errEl = $('sipError');
+
+  if (!amount || amount <= 0 || !years || years <= 0 || rate < 0 || $('sipRate').value === '') {
+    errEl.textContent = 'Enter a monthly amount, annual return, and duration first.';
+    errEl.hidden = false;
+    $('sipResult').hidden = true;
+    return;
+  }
+  errEl.hidden = true;
+
+  const i = rate / 100 / 12;
+  const n = years * 12;
+  const fv = i === 0 ? amount * n : amount * ((Math.pow(1 + i, n) - 1) / i) * (1 + i);
+  const invested = amount * n;
+
+  $('sipInvested').textContent = fmt(invested);
+  $('sipReturns').textContent = fmt(fv - invested);
+  $('sipFV').textContent = fmt(fv);
+  $('sipResult').hidden = false;
+});
+
+// ---------- Other Investments ----------
+
+function renderOtherInvestments(clientId, editable) {
+  const holdings = state.otherInvestments.filter(h => String(h.ClientID) === String(clientId));
+  $('addHoldingForm').hidden = !editable;
+
+  const body = $('holdingsBody');
+  body.innerHTML = holdings.map(h => {
+    const gain = h.GainPercent;
+    const gainCls = gain === null || gain === undefined ? '' : (gain >= 0 ? 'gain-positive' : 'gain-negative');
+    const gainText = gain === null || gain === undefined ? '-' : `${gain.toFixed(1)}%`;
+    const cagrText = h.CAGRPercent === null || h.CAGRPercent === undefined ? '-' : `${h.CAGRPercent.toFixed(1)}%`;
+    const actions = editable
+      ? `<div class="holding-actions">
+          <button type="button" class="btn-ghost" data-action="edit" data-id="${h.HoldingID}">Edit value</button>
+          <button type="button" class="btn-ghost" data-action="delete" data-id="${h.HoldingID}">Delete</button>
+        </div>`
+      : '';
+    return `
+    <tr>
+      <td>${h.Type}</td>
+      <td>${h.Name}</td>
+      <td>${fmt(h.InvestedAmount)}</td>
+      <td>${fmt(h.CurrentValue)}</td>
+      <td class="${gainCls}">${gainText}</td>
+      <td>${cagrText}</td>
+      <td>${actions}</td>
+    </tr>
+  `;
+  }).join('');
+
+  $('noHoldings').hidden = holdings.length > 0;
+  $('holdingsTable').hidden = holdings.length === 0;
+}
+
+$('addHoldingForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    action: 'addOtherInvestment',
+    clientId: state.currentClientId,
+    accessCode: state.clientAccessCode,
+    type: $('holdingType').value,
+    name: $('holdingName').value.trim(),
+    investedAmount: $('holdingInvested').value,
+    currentValue: $('holdingCurrent').value,
+    date: $('holdingDate').value,
+    notes: $('holdingNotes').value.trim(),
+  };
+
+  const msg = $('holdingMsg');
+  if (!payload.name || !payload.investedAmount || !payload.currentValue || !payload.date) {
+    msg.hidden = false;
+    msg.textContent = 'Please fill in name, invested amount, current value and date.';
+    return;
+  }
+
+  msg.hidden = false;
+  msg.textContent = 'Saving...';
+  try {
+    const res = await api(payload);
+    if (res.error) {
+      msg.textContent = res.error;
+      return;
+    }
+    await refreshClientOtherInvestments();
+    $('addHoldingForm').reset();
+    msg.textContent = 'Investment added.';
+    setTimeout(() => { msg.hidden = true; }, 2500);
+  } catch (err) {
+    msg.textContent = 'Could not save this investment.';
+  }
+});
+
+$('holdingsBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const holdingId = btn.dataset.id;
+
+  if (btn.dataset.action === 'edit') {
+    const holding = state.otherInvestments.find(h => String(h.HoldingID) === String(holdingId));
+    const input = prompt(`New current value for "${holding ? holding.Name : holdingId}":`, holding ? holding.CurrentValue : '');
+    if (input === null || input.trim() === '' || isNaN(Number(input))) return;
+    btn.disabled = true;
+    try {
+      const res = await api({
+        action: 'updateOtherInvestmentValue',
+        clientId: state.currentClientId,
+        accessCode: state.clientAccessCode,
+        holdingId,
+        currentValue: input,
+      });
+      if (res.error) { alert(res.error); return; }
+      await refreshClientOtherInvestments();
+    } catch (err) {
+      alert('Could not update this investment.');
+    } finally {
+      btn.disabled = false;
+    }
+  } else if (btn.dataset.action === 'delete') {
+    if (!confirm('Remove this investment from your records?')) return;
+    btn.disabled = true;
+    try {
+      const res = await api({
+        action: 'deleteOtherInvestment',
+        clientId: state.currentClientId,
+        accessCode: state.clientAccessCode,
+        holdingId,
+      });
+      if (res.error) { alert(res.error); return; }
+      await refreshClientOtherInvestments();
+    } catch (err) {
+      alert('Could not delete this investment.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+});
+
+async function refreshClientOtherInvestments() {
+  const refreshed = await api({
+    action: 'login',
+    clientId: state.currentClientId,
+    accessCode: state.clientAccessCode,
+  });
+  if (refreshed.error) return;
+  state.otherInvestments = refreshed.otherInvestments || [];
+  renderOtherInvestments(state.currentClientId, true);
+  renderROICompare(state.portfolioROI, state.currentClientId);
 }
 
 function fmt(n) {
@@ -361,9 +562,9 @@ function fmt(n) {
 
 $('logoutBtn').addEventListener('click', () => {
   Object.assign(state, {
-    role: null, adminKey: null, clients: [], entries: [],
+    role: null, adminKey: null, clientAccessCode: null, clients: [], entries: [],
     dueCycles: [], summary: null, clientROI: {}, portfolioROI: null, benchmarks: null,
-    currentClientId: null, currentClientName: '',
+    otherInvestments: [], currentClientId: null, currentClientName: '',
   });
   $('dashboardView').hidden = true;
   $('logoutBtn').hidden = true;

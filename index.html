@@ -53,6 +53,39 @@
   <!-- DASHBOARD VIEW -->
   <section id="dashboardView" class="card" hidden>
 
+    <div class="sip-calc">
+      <button type="button" class="sip-toggle" id="sipToggle">SIP Calculator <span id="sipToggleIcon">&#9662;</span></button>
+      <div class="sip-body" id="sipBody" hidden>
+        <div class="entry-form-grid">
+          <label>Monthly Investment (₹)
+            <input type="number" id="sipAmount" min="0" step="100" placeholder="10000">
+          </label>
+          <label>Expected Annual Return (%)
+            <input type="number" id="sipRate" min="0" step="0.1" placeholder="13">
+          </label>
+          <label>Duration (Years)
+            <input type="number" id="sipYears" min="1" step="1" placeholder="5">
+          </label>
+        </div>
+        <button type="button" class="btn-primary" id="sipCalcBtn">Calculate</button>
+        <p class="error" id="sipError" hidden></p>
+        <div class="summary-grid" id="sipResult" hidden>
+          <div class="summary-card">
+            <span class="summary-label">Total Invested</span>
+            <span class="summary-value" id="sipInvested">-</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Estimated Returns</span>
+            <span class="summary-value" id="sipReturns">-</span>
+          </div>
+          <div class="summary-card highlight">
+            <span class="summary-label">Future Value</span>
+            <span class="summary-value" id="sipFV">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="adminControls" hidden>
       <div id="summarySection" hidden>
         <h3>Portfolio Summary</h3>
@@ -140,7 +173,7 @@
     </div>
 
     <div class="roi-compare" id="roiCompare" hidden>
-      <h3>Your return vs Nifty 50</h3>
+      <h3>Compare your investments</h3>
       <div id="roiBars"></div>
       <p class="hint" id="roiNote"></p>
     </div>
@@ -158,6 +191,57 @@
       <tbody id="entriesBody"></tbody>
     </table>
     <p id="noEntries" class="hint" hidden>No entries yet.</p>
+
+    <div class="other-investments" id="otherInvestmentsSection">
+      <h3>Other Investments</h3>
+
+      <form id="addHoldingForm" class="entry-form" hidden>
+        <div class="entry-form-grid">
+          <label>Type
+            <select id="holdingType">
+              <option>Mutual Fund</option>
+              <option>Stocks</option>
+              <option>Gold</option>
+              <option>Real Estate</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label>Name
+            <input type="text" id="holdingName" placeholder="e.g. HDFC Flexicap">
+          </label>
+          <label>Invested Amount
+            <input type="number" id="holdingInvested" min="0" step="0.01">
+          </label>
+          <label>Current Value
+            <input type="number" id="holdingCurrent" min="0" step="0.01">
+          </label>
+          <label>Date Added
+            <input type="date" id="holdingDate">
+          </label>
+          <label class="notes-field">Notes
+            <input type="text" id="holdingNotes" placeholder="optional">
+          </label>
+        </div>
+        <button type="submit" class="btn-primary">Add Investment</button>
+        <p id="holdingMsg" class="hint" hidden></p>
+      </form>
+
+      <table id="holdingsTable">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Name</th>
+            <th>Invested</th>
+            <th>Current Value</th>
+            <th>Gain</th>
+            <th>CAGR</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="holdingsBody"></tbody>
+      </table>
+      <p id="noHoldings" class="hint" hidden>No other investments recorded yet.</p>
+    </div>
 
   </section>
 
